@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Audio Mod/Demod — AM / DSB / SSB / FM (UI-only tweaks)</title>
+<style>
+:root{
+  --accent: #00d1c1;
+  --accent-dark: #007f73;
+  --text:#eef6f5;
+  --muted:#bfeee8;
+  --panel-bg: linear-gradient(180deg, rgba(255,255,255,0.01), rgba(255,255,255,0.01));
+}
+html,body{height:100%;margin:0;font-family:Georgia, 'Times New Roman', serif;background:#000000;color:var(--text);}
+#bgCanvas{position:fixed;left:0;top:0;width:100%;height:100%;z-index:0}
+.wrapper{position:relative;z-index:2;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:36px}
+.card{width:980px;max-width:96%;border-radius:14px;padding:26px;background:rgba(10,20,28,0.06);border:1px solid rgba(0,200,180,0.10);
+box-shadow:0 18px 50px rgba(0,0,0,0.55);backdrop-filter: blur(8px);display:flex;flex-direction:column;align-items:center}
+.hsmall{font-size:13px;color:var(--muted);margin-bottom:6px;letter-spacing:1px}
+.hbig{font-size:34px;margin:0 0 14px;font-weight:700;text-shadow:0 8px 24px rgba(0,0,0,0.6)}
+
+.primaryBtn{background:linear-gradient(90deg,var(--accent),var(--accent-dark));color:#021212;border:none;padding:12px 18px;border-radius:10px;font-size:15px;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,0.45);transition:transform .12s ease, box-shadow .12s ease}
+
+.primaryBtn:hover{transform:translateY(-3px);box-shadow:0 18px 48px rgba(0,200,180,0.35), 0 4px 20px rgba(0,0,0,0.6)}
+.modal{display:none;position:fixed;z-index:10;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.78)}
+.modal-content{background:#07121a;width:86%;max-width:1200px;height:86%;margin:3% auto;padding:14px;border-radius:12px;border:2px solid rgba(0,200,180,0.06);
+box-shadow:0 0 40px rgba(0,200,180,0.08);display:flex;gap:12px;overflow:hidden}
+.left,.right{display:flex;flex-direction:column;gap:12px;padding:6px;overflow:auto}
+.left{flex:0 0 52%;}
+.right{flex:0 0 42%;}
+.close{color:var(--text);font-size:30px;cursor:pointer;align-self:flex-end;padding:6px}
+.panel{background:var(--panel-bg);padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.03)}
+.small{font-size:13px;color:var(--muted)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.inputfile{padding:8px;border-radius:8px;border:1px solid #16343a;background:#021216;color:var(--text)}
+.dlbtn{padding:12px 18px;border-radius:10px;font-size:15px}
+canvas.waveCanvas{width:100%;height:110px;border-radius:8px;background:#151d23;display:block}
+.rec-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rec-button{padding:12px 18px;border-radius:10px;font-size:15px}
+.rec-button[disabled]{opacity:0.6;cursor:not-allowed}
+.rec-indicator{display:inline-flex;align-items:center;gap:8px;font-weight:600;color:#a7fff2}
+.rec-dot{width:12px;height:12px;border-radius:50%;background:#ff4d4d;box-shadow:0 0 8px rgba(255,77,77,0.9);animation:pulse 1s infinite}
+@keyframes pulse{0%{transform:scale(1);opacity:1}50%{transform:scale(1.4);opacity:0.6}100%{transform:scale(1);opacity:1}}
+.timer{font-family:monospace;color:var(--muted)}
+.levelBar{width:160px;height:12px;background:#021821;border-radius:6px;border:1px solid rgba(255,255,255,0.02);overflow:hidden}
+.levelFill{height:100%;width:0%;background:linear-gradient(90deg,var(--accent),var(--accent-dark))}
+.controls-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:flex-start;margin-top:6px}
+
+.live-wrap{display:flex;flex-direction:column;align-items:flex-end;justify-content:center}
+.live-wrap canvas{width:100%;max-width:380px}
+@media(max-width:920px){.modal-content{width:94%;height:92%;flex-direction:column}.hbig{font-size:26px}.left{flex:1 1 auto}.right{flex:1 1 auto}}
+
+body::before{
+  content:"";
+  position:fixed;
+  left:0; top:0;
+  width:100%; height:100%;
+  z-index:-1;
+  background:conic-gradient(from 0deg,
+    rgba(2,18,26,0.6),
+    rgba(3,32,38,0.55),
+    rgba(2,18,26,0.6)
+  );
+  animation:swirl 18s linear infinite;
+  opacity:0.18;
+  filter:blur(22px);
+}
+@keyframes swirl{
+  0%{transform:rotate(0deg);} 
+  100%{transform:rotate(360deg);} 
+}
+body::after{
+  content:"";
+  position:fixed;
+  left:0; top:0; right:0; bottom:0;
+  z-index:-1;
+  pointer-events:none;
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:75%;
+  opacity:0.08;
+  mix-blend-mode:screen;
+  filter:blur(6px) saturate(0.9);
+  animation:floatOverlay 10s ease-in-out infinite;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1200 360'><defs><linearGradient id='g' x1='0' x2='1' y1='0' y2='0'><stop offset='0' stop-color='%2300d1c1'/><stop offset='1' stop-color='%23007f73'/></linearGradient></defs><g fill='none' stroke='url(%23g)' stroke-width='3' stroke-linecap='round' opacity='0.85'><path d='M20 180 C80 120 160 240 240 180 C320 120 400 240 480 180 C560 120 640 240 720 180 C800 120 880 240 960 180 C1040 120 1120 240 1180 180' /></g><g transform='translate(40,40)' opacity='0.85'><rect x='24' y='120' width='28' height='40' rx='3' fill='%2300d1c1' /><rect x='60' y='100' width='18' height='60' rx='3' fill='%23007f73' /><rect x='88' y='110' width='10' height='50' rx='2' fill='%2300d1c1' /></g><g transform='translate(980,80)' opacity='0.9'><path d='M0 0 L0 40 L22 60 L22 -20 Z' fill='%2300d1c1'/></g></svg>");
+}
+@keyframes floatOverlay{
+  0%{transform:translateY(0px) scale(1);} 50%{transform:translateY(-8px) scale(1.01);} 100%{transform:translateY(0px) scale(1);} 
+}
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<div class="wrapper">
+  <div class="card" role="main">
+    <div class="hsmall">ANALOG COMMUNICATION</div>
+    <div class="hbig">Modulation & Demodulation — AM / DSB / SSB / FM</div>
+    
+    <button id="openModalBtn" class="primaryBtn" aria-haspopup="dialog" aria-controls="mainModal">Open Modulation Modal</button>
+  </div>
+</div>
+
+<div id="mainModal" class="modal" aria-hidden="true">
+  <div class="modal-content" role="dialog" aria-modal="true">
+    <div class="left">
+      <span class="close" id="closeModal" title="Close">&times;</span>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="min-width:220px">
+            <label class="small">Mode:</label>
+            <select id="modeSelect" style="padding:8px;border-radius:8px;background:#021216;color:var(--text);border:1px solid #16343a">
+              <option value="AM">AM</option>
+              <option value="DSBSC">DSB-SC</option>
+              <option value="SSBSC">SSB-SC</option>
+              <option value="FM">FM</option>
+            </select>
+          </div>
+          <div style="min-width:160px">
+            <label class="small">SSB Side:</label>
+            <select id="ssbSide" style="padding:8px;border-radius:8px;background:#021216;color:var(--text);border:1px solid #16343a">
+              <option value="usb">USB</option>
+              <option value="lsb">LSB</option>
+            </select>
+          </div>
+          <div style="min-width:240px;display:none">
+            <label class="small">Auto Params:</label>
+            <div id="autoInfo" class="small" style="color:var(--muted);display:none">Not analyzed yet</div>
+          </div>
+        </div>
+        <hr style="border:0;height:1px;background:rgba(255,255,255,0.03);margin:10px 0">
+        <div class="controls-row">
+          <input id="fileInput" class="inputfile" type="file" accept="audio/*">
+          <button id="btnPlayOrig" class="primaryBtn">Play Original</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+          <div style="flex:1 1 420px">
+            <div class="small">Record (microphone)</div>
+            <div class="rec-row" style="margin-top:8px">
+              <button id="startRec" class="primaryBtn">Start Recording</button>
+              <button id="stopRec" class="primaryBtn" disabled>Stop</button>
+              <div class="rec-indicator" id="recIndicator" style="visibility:hidden"><div class="rec-dot"></div><div>Recording...</div></div>
+              <div class="timer" id="recTimer">00:00</div>
+              <div class="levelBar"><div id="levelFill" class="levelFill"></div></div>
+            </div>
+          </div>
+          <div class="live-wrap">
+            <div class="small">Live waveform</div>
+            <canvas id="liveWave" class="waveCanvas"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+          <label class="small">Carrier (Hz)<input id="fc" type="number" value="8000" style="width:120px;padding:6px;border-radius:6px;background:#021216;color:var(--text);border:1px solid #16343a;margin-left:8px"></label>
+          <label class="small">Mu (AM)<input id="mu" type="number" step="0.1" value="0.8" style="width:90px;padding:6px;border-radius:6px;background:#021216;color:var(--text);border:1px solid #16343a;margin-left:8px"></label>
+          <label class="small">Kf (FM)<input id="kf" type="number" value="1800" style="width:100px;padding:6px;border-radius:6px;background:#021216;color:var(--text);border:1px solid #16343a;margin-left:8px"></label>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button id="modulateBtn" class="primaryBtn" style="width:180px;height:44px;font-size:14px">Modulate</button>
+          <button id="demodulateBtn" class="primaryBtn" style="width:180px;height:44px;font-size:14px">Demodulate</button>
+          <button id="downloadMod" class="primaryBtn" disabled>Download Modulated</button>
+          <button id="downloadDemod" class="primaryBtn" disabled>Download Demodulated</button>
+        </div>
+      </div>
+    </div>
+    <div class="right">
+      <div class="panel">
+        <div class="small" style="margin-bottom:6px">Original</div>
+        <audio id="origPlayer" controls></audio>
+        <canvas id="origWave" class="waveCanvas"></canvas>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="small">Modulated</div>
+        <audio id="modPlayer" controls></audio>
+        <canvas id="modWave" class="waveCanvas"></canvas>
+      </div>
+      <div class="panel" style="margin-top:12px">
+        <div class="small">Demodulated</div>
+        <audio id="demodPlayer" controls></audio>
+        <canvas id="demodWave" class="waveCanvas"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = new AudioCtx();
+let origBuffer = null;
+let recordedWavBlob = null;
+
+function floatToWav(float32Array, sampleRate){
+  const buffer = new ArrayBuffer(44 + float32Array.length*2);
+  const view = new DataView(buffer);
+  function writeString(view, offset, string){ for(let i=0;i<string.length;i++) view.setUint8(offset+i,string.charCodeAt(i)); }
+  let offset=0; writeString(view,offset,'RIFF'); offset+=4;
+  view.setUint32(offset,36 + float32Array.length*2,true); offset+=4;
+  writeString(view,offset,'WAVE'); offset+=4; writeString(view,offset,'fmt '); offset+=4;
+  view.setUint32(offset,16,true); offset+=4;
+  view.setUint16(offset,1,true); offset+=2;
+  view.setUint16(offset,1,true); offset+=2;
+  view.setUint32(offset,sampleRate,true); offset+=4;
+  view.setUint32(offset,sampleRate*2,true); offset+=4;
+  view.setUint16(offset,2,true); offset+=2;
+  view.setUint16(offset,16,true); offset+=2;
+  writeString(view,offset,'data'); offset+=4;
+  view.setUint32(offset,float32Array.length*2,true); offset+=4;
+  for(let i=0;i<float32Array.length;i++){ let s=Math.max(-1,Math.min(1,float32Array[i])); view.setInt16(offset, s<0? s*0x8000 : s*0x7FFF, true); offset+=2; }
+  return new Blob([view], {type:'audio/wav'});
+}
+
+function nextPow2(v){ let p=1; while(p<v) p<<=1; return p; }
+
+function fft(re, im){
+  const n=re.length; const rev=new Uint32Array(n); let logn=0; while((1<<logn)<n) logn++;
+  for(let i=0;i<n;i++){ let x=i,y=0; for(let j=0;j<logn;j++){ y=(y<<1)|(x&1); x>>=1; } rev[i]=y; }
+  const R=new Float32Array(n), I=new Float32Array(n);
+  for(let i=0;i<n;i++){ R[i]=re[rev[i]]||0; I[i]=im[rev[i]]||0; }
+  for(let s=1;s<=logn;s++){ const m=1<<s, m2=m>>1; const theta=-2*Math.PI/m; const wpr=Math.cos(theta), wpi=Math.sin(theta);
+    for(let k=0;k<n;k+=m){ let wr=1, wi=0;
+      for(let j=0;j<m2;j++){
+        const tpre = wr*R[k+j+m2] - wi*I[k+j+m2];
+        const tpim = wr*I[k+j+m2] + wi*R[k+j+m2];
+        const ur = R[k+j], ui = I[k+j];
+        R[k+j] = ur + tpre; I[k+j] = ui + tpim;
+        R[k+j+m2] = ur - tpre; I[k+j+m2] = ui - tpim;
+        const tmp = wr; wr = tmp*wpr - wi*wpi; wi = tmp*wpi + wi*wpr;
+      }
+    }
+  }
+  return {re:R, im:I};
+}
+function ifft(re, im){
+  const n=re.length; const cre=new Float32Array(n), cim=new Float32Array(n);
+  for(let i=0;i<n;i++){ cre[i]=re[i]; cim[i]=-im[i]; }
+  const C = fft(cre,cim); const outRe=new Float32Array(n), outIm=new Float32Array(n);
+  for(let i=0;i<n;i++){ outRe[i]=C.re[i]/n; outIm[i]=-C.im[i]/n; }
+  return {re:outRe, im:outIm};
+}
+
+function analyticSignal(x){
+  const N = nextPow2(x.length);
+  const re = new Float32Array(N), im = new Float32Array(N);
+  for(let i=0;i<x.length;i++) re[i]=x[i];
+  const C = fft(re, im);
+  for(let k=(N>>1)+1;k<N;k++){ C.re[k]=0; C.im[k]=0; }
+  for(let k=1;k<(N>>1);k++){ C.re[k] *= 2; C.im[k] *= 2; }
+  const out = ifft(C.re, C.im);
+  const reOut = new Float32Array(x.length), imOut = new Float32Array(x.length);
+  for(let i=0;i<x.length;i++){ reOut[i]=out.re[i]; imOut[i]=out.im[i]; }
+  return {re:reOut, im:imOut};
+}
+function hilbert(x){ return analyticSignal(x).im; }
+
+function normalize(arr){ let mx=0; for(let i=0;i<arr.length;i++) if(Math.abs(arr[i])>mx) mx=Math.abs(arr[i]); if(mx===0) return arr; const o=new Float32Array(arr.length); for(let i=0;i<arr.length;i++) o[i]=arr[i]/mx; return o; }
+function onePoleLowpass(x, fs, cutoff){ const out=new Float32Array(x.length); const rc=1/(2*Math.PI*cutoff); const dt=1/fs; const alpha=dt/(rc+dt); let y=0; for(let i=0;i<x.length;i++){ y = y + alpha*(x[i]-y); out[i]=y;} return out; }
+
+function fmDemod(modSig, fs, fc, kf){
+
+  const A = analyticSignal(modSig);
+  const I = A.re;
+  const Q = A.im;
+  const N = I.length;
+  const out = new Float32Array(N);
+
+  for(let n=1; n<N; n++){
+    const dI = I[n] - I[n-1];
+    const dQ = Q[n] - Q[n-1];
+    let denom = (I[n]*I[n] + Q[n]*Q[n]);
+    if(denom < 1e-12) denom = 1e-12;
+    out[n] = (I[n]*dQ - Q[n]*dI) / denom;
+  }
+
+  let mean = 0; for(let i=0;i<N;i++) mean += out[i]; mean /= N;
+  for(let i=0;i<N;i++) out[i] -= mean;
+
+  const lp = onePoleLowpass(out, fs, 3500);
+
+  const scale = 1/(2*Math.PI*kf);
+  for(let i=0;i<N;i++) lp[i] = lp[i] * scale;
+
+  return normalize(lp);
+}
+
+function estimateBandwidth(signal, fs){
+  const N = Math.min(nextPow2(signal.length), 1<<16);
+  const re = new Float32Array(N), im = new Float32Array(N);
+  for(let i=0;i<Math.min(signal.length,N);i++) re[i]=signal[i];
+  const C = fft(re,im);
+  const mag = new Float32Array(N/2);
+  for(let k=0;k<mag.length;k++) mag[k] = Math.sqrt(C.re[k]*C.re[k]+C.im[k]*C.im[k]);
+  let total = 0; for(let k=0;k<mag.length;k++) total+=mag[k];
+  if(total===0) return 3500;
+  let cum=0; let idx=0;
+  for(let k=0;k<mag.length;k++){ cum+=mag[k]; if(cum/total>=0.98){ idx=k; break; } }
+  const freq = idx * (fs/N);
+  return Math.min(Math.max(freq, 800), 6000);
+}
+function estimateRMS(signal){
+  let sum=0; for(let i=0;i<signal.length;i++) sum+=signal[i]*signal[i];
+  return Math.sqrt(sum/signal.length);
+}
+
+function prepareCanvasForHiDPI(canvas){
+  const rect = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(rect.width * dpr));
+  const h = Math.max(1, Math.floor(rect.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w; canvas.height = h;
+  }
+}
+
+function drawWave(arr, canvasId){
+  try{
+    const cvs = document.getElementById(canvasId);
+    if(!cvs || !arr) return;
+    prepareCanvasForHiDPI(cvs);
+    const ctx = cvs.getContext('2d');
+    const w = cvs.width, h = cvs.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle='#151d23';
+    ctx.fillRect(0,0,w,h);
+
+    ctx.save();
+    ctx.strokeStyle = "#1ab4be";
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = Math.max(1, w/800);
+    const cols = 10, rows = 8;
+    for(let i=0;i<=cols;i++) {
+      let x = i*w/cols;
+      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke();
+    }
+    for(let i=0;i<=rows;i++) {
+      let y = i*h/rows;
+      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle="#17f3b2";
+    ctx.globalAlpha=0.8;
+    ctx.setLineDash([4,3]);
+    ctx.beginPath();
+    ctx.moveTo(0,h/2);
+    ctx.lineTo(w,h/2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle='#ffea00';
+    ctx.shadowColor='#ffea00';
+    ctx.shadowBlur=7;
+    ctx.globalAlpha=1.0;
+    ctx.lineWidth=Math.max(2, w/400);
+    ctx.beginPath();
+    const N=arr.length;
+    const step = Math.max(1, Math.floor(N / w));
+    let first=true;
+    for(let px=0; px<w; px++){
+      const idx = Math.min(N-1, Math.floor(px * step));
+      const sample = arr[idx] || 0;
+      const y = h/2 - (sample) * (h*0.44);
+      if(first){ ctx.moveTo(px,y); first=false; }
+      else ctx.lineTo(px,y);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }catch(e){ console.warn('drawWave error', e); }
+}
+function runAutoAdjust(buffer){
+  if(!buffer) return;
+  const N = Math.min(buffer.length, buffer.sampleRate*4);
+  const seg = buffer.getChannelData(0).slice(0, N);
+  const bw = estimateBandwidth(seg, buffer.sampleRate);
+  const rms = estimateRMS(seg);
+  let fc = Math.floor(Math.min(Math.max(bw*2+900, 2000), Math.floor(buffer.sampleRate/4)));
+  let mu = 0.5 + Math.min(0.35, rms*2.5); if(mu>0.85) mu=0.85;
+  let kf = Math.floor(Math.min(Math.max(1200 + bw*0.2 + rms*1500, 800), 4000));
+  document.getElementById('fc').value = Math.max(2000, fc);
+  document.getElementById('mu').value = Number(mu.toFixed(2));
+  document.getElementById('kf').value = kf;
+  const ai = document.getElementById('autoInfo'); if(ai) ai.textContent = `Auto: BW~${Math.round(bw)}Hz • RMS~${rms.toFixed(3)} • fc=${fc}, μ=${mu.toFixed(2)}, kf=${kf}`;
+}
+const fileInput = document.getElementById('fileInput'), origPlayer = document.getElementById('origPlayer');
+const modPlayer = document.getElementById('modPlayer'), demodPlayer = document.getElementById('demodPlayer');
+
+fileInput.addEventListener('change', async (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const ab = await f.arrayBuffer();
+  try{ origBuffer = await audioCtx.decodeAudioData(ab.slice(0)); }
+  catch(err){ origBuffer = await new Promise((res,rej)=> audioCtx.decodeAudioData(ab, res, rej)); }
+  const ch = origBuffer.getChannelData(0);
+  const wav = floatToWav(ch, origBuffer.sampleRate);
+  origPlayer.src = URL.createObjectURL(wav);
+  drawWave(ch, 'origWave');
+  runAutoAdjust(origBuffer);
+});
+
+const startRecBtn = document.getElementById('startRec'), stopRecBtn = document.getElementById('stopRec');
+const recIndicator = document.getElementById('recIndicator'), recTimer = document.getElementById('recTimer');
+const levelFill = document.getElementById('levelFill'), liveCanvas = document.getElementById('liveWave');
+let spNode=null, recStream=null, recBuffers=[], recording=false, recStartTime=0, recTimerInterval=null;
+
+function clearLive(){ const c = document.getElementById('liveWave'); if(!c) return; const ctx=c.getContext('2d'); prepareCanvasForHiDPI(c); ctx.clearRect(0,0,c.width,c.height); ctx.fillStyle='#151d23'; ctx.fillRect(0,0,c.width,c.height); }
+clearLive();
+
+startRecBtn.addEventListener('click', async ()=>{
+  try{ recStream = await navigator.mediaDevices.getUserMedia({audio:{channelCount:1}}); }catch(e){ alert('Microphone access denied or unavailable.'); return; }
+  recBuffers=[]; recording=true; recIndicator.style.visibility='visible'; startRecBtn.disabled=true; stopRecBtn.disabled=false;
+  recStartTime = Date.now();
+  recTimer.textContent='00:00';
+  recTimerInterval = setInterval(()=>{ const s=Math.floor((Date.now()-recStartTime)/1000); const mm=String(Math.floor(s/60)).padStart(2,'0'), ss=String(s%60).padStart(2,'0'); recTimer.textContent = `${mm}:${ss}`; },250);
+  const src = audioCtx.createMediaStreamSource(recStream);
+  const bufferSize = 4096;
+  spNode = audioCtx.createScriptProcessor(bufferSize,1,1);
+  spNode.onaudioprocess = (e)=>{
+    if(!recording) return;
+    const input = e.inputBuffer.getChannelData(0);
+    recBuffers.push(new Float32Array(input));
+    drawWave(input, 'liveWave');
+    let sum=0; for(let i=0;i<input.length;i++){ sum+=input[i]*input[i]; }
+    const rms = Math.sqrt(sum/input.length);
+    const level = Math.min(1, rms*6); levelFill.style.width = (level*100)+'%';
+  };
+  src.connect(spNode); spNode.connect(audioCtx.destination);
+});
+stopRecBtn.addEventListener('click', async ()=>{
+  if(!recording) return;
+  recording=false; recIndicator.style.visibility='hidden'; startRecBtn.disabled=false; stopRecBtn.disabled=true;
+  clearInterval(recTimerInterval);
+  if(recStream){ recStream.getTracks().forEach(t=>t.stop()); recStream=null; }
+  if(spNode){ spNode.disconnect(); spNode.onaudioprocess=null; spNode=null; }
+  const totalLen = recBuffers.reduce((s,b)=>s+b.length,0);
+  const out = new Float32Array(totalLen);
+  let offset=0; for(const b of recBuffers){ out.set(b, offset); offset+=b.length; }
+  const sr = audioCtx.sampleRate || 44100;
+  recordedWavBlob = floatToWav(out, sr);
+  origPlayer.src = URL.createObjectURL(recordedWavBlob);
+  const ab = await recordedWavBlob.arrayBuffer();
+  try{ origBuffer = await audioCtx.decodeAudioData(ab.slice(0)); }catch(e){ origBuffer = await new Promise((res,rej)=> audioCtx.decodeAudioData(ab, res, rej)); }
+  drawWave(origBuffer.getChannelData(0), 'origWave');
+  runAutoAdjust(origBuffer);
+  levelFill.style.width='0%';
+  recTimer.textContent='00:00';
+});
+const modeSelect = document.getElementById('modeSelect'), ssbSide = document.getElementById('ssbSide');
+const modulateBtn = document.getElementById('modulateBtn'), demodulateBtn = document.getElementById('demodulateBtn');
+const downloadMod = document.getElementById('downloadMod'), downloadDemod = document.getElementById('downloadDemod');
+
+let modArray=null, demodArray=null, modBlob=null, demodBlob=null, modSampleRate=44100;
+
+modulateBtn.addEventListener('click', ()=>{
+  if(!origBuffer){ alert('Please upload or record audio first'); return; }
+  const fs = origBuffer.sampleRate || 44100;
+  let fc = Number(document.getElementById('fc').value) || 8000;
+  const mu = Number(document.getElementById('mu').value) || 0.5;
+  const kf = Number(document.getElementById('kf').value) || 1800;
+  const mode = modeSelect.value;
+  const side = ssbSide.value;
+  if(fc >= fs/2){ fc = Math.floor(fs/4); alert('Carrier adjusted to '+fc+' Hz (prevent aliasing)'); }
+  const m = origBuffer.getChannelData(0);
+  const N = m.length;
+  const mod = new Float32Array(N); const dem = new Float32Array(N);
+  const twoPiFc = 2*Math.PI*fc;
+  if(mode==='AM'){
+    for(let n=0;n<N;n++){ const t=n/fs; const c=Math.cos(twoPiFc*t); mod[n] = (1 + mu * m[n]) * c; }
+    const a = analyticSignal(mod); const env = new Float32Array(N);
+    for(let i=0;i<N;i++) env[i] = Math.sqrt(a.re[i]*a.re[i] + a.im[i]*a.im[i]);
+    let rec = onePoleLowpass(env, fs, 4000);
+    rec = onePoleLowpass(rec, fs, 3500);
+    rec = onePoleLowpass(rec, fs, 3000);
+    let mean=0; for(let i=0;i<rec.length;i++) mean+=rec[i]; mean/=rec.length;
+    for(let i=0;i<rec.length;i++) dem[i] = rec[i] - mean;
+    demodArray = normalize(dem);
+  }
+  else if(mode==='DSBSC'){
+    for(let n=0;n<N;n++){ const t=n/fs; mod[n] = m[n]*Math.cos(twoPiFc*t); }
+    const mixed = new Float32Array(N);
+    for(let n=0;n<N;n++){ mixed[n] = 2 * mod[n] * Math.cos(twoPiFc*(n/fs)); }
+    dem.set(onePoleLowpass(mixed, fs, 3200));
+    demodArray = normalize(dem);
+  }
+  else if(mode==='SSBSC'){
+    const mhat = hilbert(m);
+    for(let n=0;n<N;n++){
+      const t = n/fs;
+      const cosc = Math.cos(twoPiFc*t), sinc = Math.sin(twoPiFc*t);
+      mod[n] = (side==='usb') ? (m[n]*cosc - mhat[n]*sinc) : (m[n]*cosc + mhat[n]*sinc);
+    }
+    const mixed = new Float32Array(N);
+    for(let n=0;n<N;n++){ mixed[n] = 2 * mod[n] * Math.cos(twoPiFc*(n/fs)); }
+    dem.set(onePoleLowpass(mixed, fs, 3200));
+    demodArray = normalize(dem);
+  }
+  else if(mode==='FM'){
+    let phase = 0; const dt = 1/fs;
+    for(let n=0;n<N;n++){ phase += 2*Math.PI * kf * m[n] * dt; mod[n] = Math.cos(twoPiFc * (n/fs) + phase); }
+    demodArray = fmDemod(mod, fs, fc, kf);
+  }
+  if(!demodArray) demodArray = normalize(dem);
+  modArray = normalize(mod);
+  modSampleRate = fs;
+  modBlob = floatToWav(modArray, modSampleRate);
+  demodBlob = floatToWav(demodArray, modSampleRate);
+  modPlayer.src = URL.createObjectURL(modBlob);
+  demodPlayer.src = URL.createObjectURL(demodBlob);
+
+  if(origBuffer) drawWave(origBuffer.getChannelData(0), 'origWave');
+  if(modArray) drawWave(modArray, 'modWave');
+  if(demodArray) drawWave(demodArray, 'demodWave');
+
+  downloadMod.disabled=false; downloadDemod.disabled=false;
+  downloadMod.onclick = ()=>{ triggerDownload(modBlob, 'modulated.wav'); };
+  downloadDemod.onclick = ()=>{ triggerDownload(demodBlob, 'demodulated.wav'); };
+});
+
+demodulateBtn.addEventListener('click', ()=>{
+  if(!demodArray){ alert('Run Modulate first'); return; }
+  demodPlayer.src = URL.createObjectURL(demodBlob);
+  drawWave(demodArray, 'demodWave');
+});
+
+function triggerDownload(blob, filename){ const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; a.click(); }
+
+const openModalBtn = document.getElementById('openModalBtn'), modal = document.getElementById('mainModal');
+document.getElementById('closeModal').addEventListener('click', ()=>{ modal.style.display='none'; modal.setAttribute('aria-hidden','true'); });
+window.addEventListener('click', (ev)=>{ if(ev.target===modal){ modal.style.display='none'; modal.setAttribute('aria-hidden','true'); } });
+
+openModalBtn.addEventListener('click', async ()=>{
+  if(audioCtx.state==='suspended') {
+    try{ await audioCtx.resume(); }catch(e){ console.warn('audio resume failed', e); }
+  }
+  modal.style.display='block'; modal.setAttribute('aria-hidden','false');
+});
+function redrawAll(){
+  if(origBuffer) drawWave(origBuffer.getChannelData(0), 'origWave');
+  if(modArray) drawWave(modArray, 'modWave');
+  if(demodArray) drawWave(demodArray, 'demodWave');
+  clearLive();
+}
+window.addEventListener('resize', ()=>{ redrawAll(); });
+
+setInterval(()=>{ if(origBuffer) drawWave(origBuffer.getChannelData(0), 'origWave'); }, 900);
+
+document.getElementById('btnPlayOrig').addEventListener('click', ()=>{ if(origPlayer.src) origPlayer.play(); else alert('Load or record audio first'); });
+(function(){
+  const cvs = document.getElementById('bgCanvas');
+  const ctx = cvs.getContext('2d');
+  let w = 0, h = 0, t = 0;
+  function resize(){
+    const dpr = window.devicePixelRatio || 1;
+    w = Math.max(1, Math.floor(window.innerWidth * dpr));
+    h = Math.max(1, Math.floor(window.innerHeight * dpr));
+    cvs.width = w; cvs.height = h;
+    cvs.style.width = window.innerWidth + 'px';
+    cvs.style.height = window.innerHeight + 'px';
+  }
+  function draw(){
+    ctx.clearRect(0,0,w,h);
+    const layers = 3;
+    for(let L=0; L<layers; L++){
+      const amp = (30 + L*18) * (1 + 0.08*Math.sin(t*0.7 + L));
+      const freq = 0.0012 + L*0.0009;
+      ctx.beginPath();
+      for(let x=0; x<w; x+=2){
+        const px = x;
+        const vx = x/w;
+        const y = h*0.5 + Math.sin((x*freq) + t*0.02 + L*1.2) * amp * (1 - Math.abs(vx-0.5)*1.6);
+        if(x===0) ctx.moveTo(px,y);
+        else ctx.lineTo(px,y);
+      }
+      ctx.lineWidth = 2.5 - L*0.6;
+      const grad = ctx.createLinearGradient(0,0,w,0);
+      grad.addColorStop(0, 'rgba(0,209,193,'+(0.14 - L*0.03)+')');
+      grad.addColorStop(0.5, 'rgba(255,238,0,'+(0.08 - L*0.02)+')');
+      grad.addColorStop(1, 'rgba(0,127,115,'+(0.14 - L*0.03)+')');
+      ctx.strokeStyle = grad;
+      ctx.shadowBlur = 14 - L*4;
+      ctx.shadowColor = 'rgba(0,209,193,0.12)';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.9 - L*0.25;
+      ctx.stroke();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    t += 1.6;
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>
